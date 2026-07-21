@@ -1,0 +1,259 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FineAppCraft — Admin</title>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@500&display=swap" rel="stylesheet">
+<script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
+<style>
+  :root{
+    --ink:#12172B; --cyan:#2AA9C7; --cyan-bright:#3DDBD9; --amber:#FFB238;
+    --bg:#F7F8FC; --panel:#fff; --slate:#5B6478; --line:#E2E5EE;
+  }
+  *{box-sizing:border-box;}
+  body{margin:0;font-family:'Inter',sans-serif;background:var(--bg);color:var(--ink);}
+  h1,h2{font-family:'Space Grotesk',sans-serif;}
+  .wrap{max-width:960px;margin:0 auto;padding:40px 24px;}
+  .login-box{max-width:360px;margin:80px auto;background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:28px;}
+  label{display:block;font-weight:600;font-size:.85rem;margin:14px 0 6px;}
+  input{width:100%;padding:10px 12px;border:1.5px solid var(--line);border-radius:8px;font-size:.92rem;}
+  button{border:none;border-radius:8px;padding:11px 18px;font-weight:600;background:var(--ink);color:#fff;cursor:pointer;margin-top:16px;}
+  button:hover{background:#232a45;}
+  .stats{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin:24px 0;}
+  .stat{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:16px;}
+  .stat .num{font-family:'JetBrains Mono',monospace;font-size:1.6rem;font-weight:700;}
+  .stat .label{color:var(--slate);font-size:.8rem;}
+  table{width:100%;border-collapse:collapse;background:var(--panel);border:1px solid var(--line);border-radius:12px;overflow:hidden;}
+  th,td{text-align:left;padding:10px 12px;font-size:.85rem;border-bottom:1px solid var(--line);}
+  th{background:#F1F4FA;font-weight:700;}
+  .pill{padding:3px 9px;border-radius:20px;font-size:.72rem;font-weight:700;}
+  .pill-unpaid{background:#FDECEC;color:#C0392B;}
+  .pill-paid{background:#E7F7EF;color:#1A8F5C;}
+  .pill-pending_review{background:#FFF3DE;color:#B9770A;}
+  .pill-needs_review{background:#FFF3DE;color:#B9770A;}
+  .hidden{display:none;}
+  #error{color:#C0392B;font-size:.85rem;margin-top:8px;}
+  .empty{padding:30px;text-align:center;color:var(--slate);}
+</style>
+</head>
+<body>
+
+<div class="login-box" id="loginBox">
+  <h2>Admin login</h2>
+  <p style="color:var(--slate);font-size:.85rem;">Only for the FineAppCraft owner — set up this account in Firebase Authentication first.</p>
+  <label>Email</label>
+  <input id="loginEmail" type="email">
+  <label>Password</label>
+  <input id="loginPassword" type="password">
+  <button onclick="login()">Log in</button>
+  <div id="error"></div>
+</div>
+
+<div class="wrap hidden" id="dashboard">
+  <div id="notifyBanner" class="hidden" style="background:#12172B;color:#fff;border-radius:10px;padding:14px 18px;margin-bottom:20px;display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap;">
+    <span id="notifyText" style="font-weight:600;"></span>
+    <button onclick="markAllSeen()" style="background:#3DDBD9;color:#12172B;border:none;border-radius:6px;padding:8px 14px;font-weight:600;cursor:pointer;">Mark all as seen</button>
+  </div>
+  <h1>Purchases &amp; requests</h1>
+  <p style="color:var(--slate);">Live — updates the moment a customer submits a quote, pays, or requests a custom build. No need to check email or texts separately.</p>
+
+  <div class="stats">
+    <div class="stat"><div class="num" id="statUnpaid">0</div><div class="label">Unpaid quotes</div></div>
+    <div class="stat"><div class="num" id="statPaid">0</div><div class="label">Paid</div></div>
+    <div class="stat"><div class="num" id="statPending">0</div><div class="label">Pending custom requests</div></div>
+  </div>
+
+  <table>
+    <thead><tr><th>Time</th><th>Type</th><th>Customer</th><th>Template / Project</th><th>Amount</th><th>Status</th></tr></thead>
+    <tbody id="rows"></tbody>
+  </table>
+  <div class="empty hidden" id="emptyState">No purchases or requests yet — they'll show up here the moment someone submits one.</div>
+
+  <h1 style="margin-top:48px;">Maintenance tickets</h1>
+  <p style="color:var(--slate);">Only "needs review" tickets require you — everything else is priced and paid automatically.</p>
+  <div class="stats">
+    <div class="stat"><div class="num" id="statTicketReview">0</div><div class="label">Needs your review</div></div>
+    <div class="stat"><div class="num" id="statTicketUnpaid">0</div><div class="label">Unpaid</div></div>
+    <div class="stat"><div class="num" id="statTicketPaid">0</div><div class="label">Paid</div></div>
+  </div>
+  <table>
+    <thead><tr><th>Time</th><th>Category</th><th>Urgency</th><th>App</th><th>Customer</th><th>Amount</th><th>Status</th></tr></thead>
+    <tbody id="ticketRows"></tbody>
+  </table>
+  <div class="empty hidden" id="ticketEmptyState">No maintenance tickets yet.</div>
+</div>
+
+<script>
+const firebaseConfig = {
+  apiKey: "AIzaSyA5cNSSPx9VXh7j8AxFXYCbiHd6QtOVOLc",
+  authDomain: "flutter-ai-playground-6f573.firebaseapp.com",
+  projectId: "flutter-ai-playground-6f573",
+  storageBucket: "flutter-ai-playground-6f573.firebasestorage.app",
+  messagingSenderId: "63876261140",
+  appId: "1:63876261140:web:0c44754a7527fd0a740e01"
+};
+let db = null, auth = null;
+try {
+  if (typeof firebase !== 'undefined') {
+    firebase.initializeApp(firebaseConfig);
+    db = firebase.firestore();
+    auth = firebase.auth();
+  }
+} catch (err) {
+  console.error('Firebase init failed — check firebaseConfig.', err);
+}
+
+function login(){
+  if(!auth){
+    document.getElementById('error').textContent = 'Firebase did not load — check your connection or firebaseConfig.';
+    return;
+  }
+  const email = document.getElementById('loginEmail').value;
+  const password = document.getElementById('loginPassword').value;
+  document.getElementById('error').textContent = '';
+  auth.signInWithEmailAndPassword(email, password)
+    .catch(err => { document.getElementById('error').textContent = err.message; });
+}
+
+if(auth){
+  auth.onAuthStateChanged(user => {
+    if(user){
+      document.getElementById('loginBox').classList.add('hidden');
+      document.getElementById('dashboard').classList.remove('hidden');
+      listenForPurchases();
+      listenForTickets();
+    } else {
+      document.getElementById('loginBox').classList.remove('hidden');
+      document.getElementById('dashboard').classList.add('hidden');
+    }
+  });
+} else {
+  document.getElementById('error').textContent = 'Firebase did not load — check your connection or firebaseConfig.';
+}
+
+// ---- New-activity notification (so you know to check without a separate email/text) ----
+const LAST_SEEN_KEY = 'fac_admin_last_seen';
+let latestPurchases = [];
+let latestTickets = [];
+
+function getLastSeen(){
+  const stored = localStorage.getItem(LAST_SEEN_KEY);
+  return stored ? new Date(stored) : new Date(0);
+}
+
+function markAllSeen(){
+  localStorage.setItem(LAST_SEEN_KEY, new Date().toISOString());
+  updateNotificationBanner();
+}
+
+function updateNotificationBanner(){
+  const lastSeen = getLastSeen();
+  const isNew = (doc) => doc.timestamp && doc.timestamp.toDate() > lastSeen;
+  const newCount = latestPurchases.filter(isNew).length + latestTickets.filter(isNew).length;
+
+  const banner = document.getElementById('notifyBanner');
+  const text = document.getElementById('notifyText');
+  if(newCount > 0){
+    banner.classList.remove('hidden');
+    text.textContent = '🔔 ' + newCount + ' new update' + (newCount===1?'':'s') + ' since your last visit';
+    document.title = '(' + newCount + ') FineAppCraft — Admin';
+  } else {
+    banner.classList.add('hidden');
+    document.title = 'FineAppCraft — Admin';
+  }
+}
+
+function listenForPurchases(){
+  db.collection('fineappcraft_purchases').orderBy('timestamp', 'desc').onSnapshot(snapshot => {
+    const rows = document.getElementById('rows');
+    const emptyState = document.getElementById('emptyState');
+    if(snapshot.empty){
+      rows.innerHTML = '';
+      emptyState.classList.remove('hidden');
+      updateStats([]);
+      latestPurchases = [];
+      updateNotificationBanner();
+      return;
+    }
+    emptyState.classList.add('hidden');
+    const docs = snapshot.docs.map(d => d.data());
+    const lastSeen = getLastSeen();
+    rows.innerHTML = docs.map(p => {
+      const isNew = p.timestamp && p.timestamp.toDate() > lastSeen;
+      return `
+      <tr style="${isNew ? 'background:#EFF7F8;font-weight:600;' : ''}">
+        <td>${p.timestamp ? p.timestamp.toDate().toLocaleString() : 'just now'}${isNew ? ' 🔔' : ''}</td>
+        <td>${p.type === 'quote' ? 'Quote' : 'Custom request'}</td>
+        <td>${p.customerName || '—'}${p.customerEmail ? ' <'+p.customerEmail+'>' : ''}</td>
+        <td>${p.template || p.project || '—'}</td>
+        <td>$${(p.amount||0).toLocaleString()}</td>
+        <td><span class="pill pill-${p.status}">${p.status.replace('_',' ')}</span></td>
+      </tr>`;
+    }).join('');
+    updateStats(docs);
+    latestPurchases = docs;
+    updateNotificationBanner();
+  }, err => {
+    document.getElementById('rows').innerHTML = '';
+    document.getElementById('emptyState').textContent = 'Could not load purchases — check your Firestore security rules and config.';
+    document.getElementById('emptyState').classList.remove('hidden');
+    console.error(err);
+  });
+}
+
+function updateStats(docs){
+  document.getElementById('statUnpaid').textContent = docs.filter(d=>d.status==='unpaid').length;
+  document.getElementById('statPaid').textContent = docs.filter(d=>d.status==='paid').length;
+  document.getElementById('statPending').textContent = docs.filter(d=>d.status==='pending_review').length;
+}
+
+function listenForTickets(){
+  db.collection('fineappcraft_tickets').orderBy('timestamp', 'desc').onSnapshot(snapshot => {
+    const rows = document.getElementById('ticketRows');
+    const emptyState = document.getElementById('ticketEmptyState');
+    if(snapshot.empty){
+      rows.innerHTML = '';
+      emptyState.classList.remove('hidden');
+      updateTicketStats([]);
+      latestTickets = [];
+      updateNotificationBanner();
+      return;
+    }
+    emptyState.classList.add('hidden');
+    const docs = snapshot.docs.map(d => d.data());
+    const lastSeen = getLastSeen();
+    rows.innerHTML = docs.map(t => {
+      const isNew = t.timestamp && t.timestamp.toDate() > lastSeen;
+      return `
+      <tr style="${isNew ? 'background:#EFF7F8;font-weight:600;' : ''}">
+        <td>${t.timestamp ? t.timestamp.toDate().toLocaleString() : 'just now'}${isNew ? ' 🔔' : ''}</td>
+        <td>${t.typeName || t.type || '—'}</td>
+        <td>${t.urgency || '—'}</td>
+        <td>${t.appName || '—'}</td>
+        <td>${t.customerEmail || '—'}</td>
+        <td>${t.amount != null ? '$'+t.amount.toLocaleString() : 'TBD'}</td>
+        <td><span class="pill pill-${t.status}">${t.status.replace('_',' ')}</span></td>
+      </tr>`;
+    }).join('');
+    updateTicketStats(docs);
+    latestTickets = docs;
+    updateNotificationBanner();
+  }, err => {
+    document.getElementById('ticketRows').innerHTML = '';
+    document.getElementById('ticketEmptyState').textContent = 'Could not load tickets — check your Firestore security rules.';
+    document.getElementById('ticketEmptyState').classList.remove('hidden');
+    console.error(err);
+  });
+}
+
+function updateTicketStats(docs){
+  document.getElementById('statTicketReview').textContent = docs.filter(d=>d.status==='needs_review').length;
+  document.getElementById('statTicketUnpaid').textContent = docs.filter(d=>d.status==='unpaid').length;
+  document.getElementById('statTicketPaid').textContent = docs.filter(d=>d.status==='paid').length;
+}
+</script>
+</body>
+</html>

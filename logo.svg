@@ -1,0 +1,21 @@
+<svg width="560" height="160" viewBox="0 0 560 160" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="sparkGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#3DDBD9"/>
+      <stop offset="100%" stop-color="#2AA9C7"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Icon: hexagonal app-frame with a forged spark/node, reads as an abstract "A" -->
+  <g transform="translate(10,10)">
+    <polygon points="70,4 132,40 132,112 70,148 8,112 8,40"
+             fill="#12172B"/>
+    <path d="M70 34 L104 100 L92 100 L84 84 L56 84 L48 100 L36 100 Z M62 72 L78 72 L70 56 Z"
+          fill="url(#sparkGrad)"/>
+    <circle cx="70" cy="30" r="6" fill="#FFB238"/>
+  </g>
+
+  <!-- Wordmark -->
+  <text x="168" y="82" font-family="'Space Grotesk', 'Segoe UI', sans-serif" font-size="46" font-weight="700" fill="#12172B">FineApp<tspan fill="#2AA9C7">Craft</tspan></text>
+  <text x="170" y="112" font-family="'Inter', 'Segoe UI', sans-serif" font-size="15" font-weight="500" letter-spacing="2" fill="#5B6478">TEMPLATES · QUOTES · BUILDS</text>
+</svg>
