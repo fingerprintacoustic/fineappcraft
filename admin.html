@@ -67,7 +67,7 @@
   </div>
 
   <table>
-    <thead><tr><th>Time</th><th>Type</th><th>Customer</th><th>Template / Project</th><th>Amount</th><th>Status</th></tr></thead>
+    <thead><tr><th>Time</th><th>Type</th><th>Customer</th><th>Template / Project</th><th>Amount</th><th>Status</th><th>Details</th></tr></thead>
     <tbody id="rows"></tbody>
   </table>
   <div class="empty hidden" id="emptyState">No purchases or requests yet — they'll show up here the moment someone submits one.</div>
@@ -181,17 +181,28 @@ function listenForPurchases(){
     emptyState.classList.add('hidden');
     const docs = snapshot.docs.map(d => d.data());
     const lastSeen = getLastSeen();
-    rows.innerHTML = docs.map(p => {
+    rows.innerHTML = docs.map((p, i) => {
       const isNew = p.timestamp && p.timestamp.toDate() > lastSeen;
+      const hasDetails = p.description || p.features || p.goal || (p.apps && p.apps.length);
+      let detailsHtml = '';
+      if(p.description) detailsHtml += '<p style="margin:4px 0;"><strong>What they need:</strong> ' + p.description + '</p>';
+      if(p.features) detailsHtml += '<p style="margin:4px 0;"><strong>Must-have features:</strong> ' + p.features + '</p>';
+      if(p.goal) detailsHtml += '<p style="margin:4px 0;"><strong>Consolidation goal:</strong> ' + p.goal + '</p>';
+      if(p.apps && p.apps.length) detailsHtml += '<p style="margin:4px 0;"><strong>Apps to combine:</strong> ' + p.apps.map((a,j)=>a+' ('+(p.appLinks?p.appLinks[j]:'')+')').join(', ') + '</p>';
+      if(p.deadline) detailsHtml += '<p style="margin:4px 0;"><strong>Deadline:</strong> ' + p.deadline + '</p>';
+      if(p.budget) detailsHtml += '<p style="margin:4px 0;"><strong>Client-stated budget:</strong> ' + p.budget + '</p>';
+      if(p.complexity) detailsHtml += '<p style="margin:4px 0;"><strong>Complexity:</strong> ' + p.complexity + '</p>';
       return `
       <tr style="${isNew ? 'background:#EFF7F8;font-weight:600;' : ''}">
         <td>${p.timestamp ? p.timestamp.toDate().toLocaleString() : 'just now'}${isNew ? ' 🔔' : ''}</td>
-        <td>${p.type === 'quote' ? 'Quote' : 'Custom request'}</td>
+        <td>${p.type === 'quote' ? 'Quote' : p.type === 'consolidation_request' ? 'App consolidation' : 'Custom request'}</td>
         <td>${p.customerName || '—'}${p.customerEmail ? ' <'+p.customerEmail+'>' : ''}</td>
         <td>${p.template || p.project || '—'}</td>
         <td>$${(p.amount||0).toLocaleString()}</td>
         <td><span class="pill pill-${p.status}">${p.status.replace('_',' ')}</span></td>
-      </tr>`;
+        <td>${hasDetails ? '<button onclick="togglePurchaseDetails('+i+')" style="font-size:.75rem;padding:4px 8px;">View</button>' : '—'}</td>
+      </tr>
+      ${hasDetails ? '<tr id="purchaseDetails'+i+'" class="hidden"><td colspan="7" style="background:#FBFCFE;font-size:.85rem;">'+detailsHtml+'</td></tr>' : ''}`;
     }).join('');
     updateStats(docs);
     latestPurchases = docs;
@@ -202,6 +213,11 @@ function listenForPurchases(){
     document.getElementById('emptyState').classList.remove('hidden');
     console.error(err);
   });
+}
+
+function togglePurchaseDetails(i){
+  const row = document.getElementById('purchaseDetails'+i);
+  if(row) row.classList.toggle('hidden');
 }
 
 function updateStats(docs){
