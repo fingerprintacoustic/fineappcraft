@@ -84,6 +84,35 @@
     <tbody id="ticketRows"></tbody>
   </table>
   <div class="empty hidden" id="ticketEmptyState">No maintenance tickets yet.</div>
+
+  <h1 style="margin-top:48px;">Marketers &amp; referrals</h1>
+  <p style="color:var(--slate);">Max 10 marketers, three tiers: 30% (up to 3), 20% (up to 3), 10% (up to 4). Commission is capped at each template's suggested price, even if the customer pays more — so marketers have no incentive to inflate a customer's price to earn extra.</p>
+
+  <div class="stats">
+    <div class="stat"><div class="num" id="statMarketerCount">0</div><div class="label">Marketers (of 10)</div></div>
+    <div class="stat"><div class="num" id="statCommissionOwed">$0</div><div class="label">Commission owed (paid sales)</div></div>
+  </div>
+
+  <div class="panel-box" style="background:#fff;border:1px solid var(--line);border-radius:12px;padding:20px;margin-bottom:20px;">
+    <h3 style="margin-top:0;">Add a marketer</h3>
+    <div style="display:flex;gap:10px;flex-wrap:wrap;">
+      <input id="mktName" placeholder="Name" style="flex:1;min-width:140px;padding:9px 10px;border:1px solid var(--line);border-radius:6px;">
+      <input id="mktCode" placeholder="Referral code (e.g. SAM10)" style="flex:1;min-width:160px;padding:9px 10px;border:1px solid var(--line);border-radius:6px;">
+      <select id="mktTier" style="padding:9px 10px;border:1px solid var(--line);border-radius:6px;">
+        <option value="30">30% tier (max 3)</option>
+        <option value="20">20% tier (max 3)</option>
+        <option value="10">10% tier (max 4)</option>
+      </select>
+      <button onclick="addMarketer()" style="background:var(--ink);color:#fff;border:none;border-radius:6px;padding:9px 16px;font-weight:600;cursor:pointer;">Add</button>
+    </div>
+    <p id="mktError" style="color:#C0392B;font-size:.85rem;margin:10px 0 0;display:none;"></p>
+  </div>
+
+  <table>
+    <thead><tr><th>Name</th><th>Referral code</th><th>Tier</th><th>Sales referred</th><th>Commission owed</th><th>Status</th><th></th></tr></thead>
+    <tbody id="marketerRows"></tbody>
+  </table>
+  <div class="empty hidden" id="marketerEmptyState">No marketers added yet.</div>
 </div>
 
 <script>
@@ -125,6 +154,7 @@ if(auth){
       document.getElementById('dashboard').classList.remove('hidden');
       listenForPurchases();
       listenForTickets();
+      listenForMarketers();
     } else {
       document.getElementById('loginBox').classList.remove('hidden');
       document.getElementById('dashboard').classList.add('hidden');
@@ -142,6 +172,116 @@ let latestTickets = [];
 function getLastSeen(){
   const stored = localStorage.getItem(LAST_SEEN_KEY);
   return stored ? new Date(stored) : new Date(0);
+}
+
+// ---- Marketers & referrals ----
+const TIER_CAPS = { '30': 3, '20': 3, '10': 4 };
+let marketers = [];
+
+function addMarketer(){
+  const name = document.getElementById('mktName').value.trim();
+  const code = document.getElementById('mktCode').value.trim().toUpperCase();
+  const tier = document.getElementById('mktTier').value;
+  const errEl = document.getElementById('mktError');
+  errEl.style.display = 'none';
+
+  if(!name || !code){
+    errEl.textContent = 'Enter a name and referral code.';
+    errEl.style.display = 'block';
+    return;
+  }
+  if(marketers.some(m => m.code === code)){
+    errEl.textContent = 'That referral code is already in use.';
+    errEl.style.display = 'block';
+    return;
+  }
+  if(marketers.length >= 10){
+    errEl.textContent = 'Maximum of 10 marketers reached.';
+    errEl.style.display = 'block';
+    return;
+  }
+  const tierCount = marketers.filter(m => m.tier === tier).length;
+  if(tierCount >= TIER_CAPS[tier]){
+    errEl.textContent = 'The ' + tier + '% tier is full (max ' + TIER_CAPS[tier] + ').';
+    errEl.style.display = 'block';
+    return;
+  }
+
+  if(db){
+    db.collection('fineappcraft_marketers').add({ name, code, tier, createdAt: firebase.firestore.FieldValue.serverTimestamp() })
+      .then(() => {
+        document.getElementById('mktName').value = '';
+        document.getElementById('mktCode').value = '';
+      })
+      .catch(err => { errEl.textContent = 'Could not save — check Firestore rules/config.'; errEl.style.display = 'block'; console.error(err); });
+  }
+}
+
+function removeMarketer(id){
+  if(db) db.collection('fineappcraft_marketers').doc(id).delete().catch(err => console.error(err));
+}
+
+function listenForMarketers(){
+  if(!db) return;
+  db.collection('fineappcraft_marketers').orderBy('createdAt', 'asc').onSnapshot(snapshot => {
+    marketers = snapshot.docs.map(d => Object.assign({ id: d.id }, d.data()));
+    renderMarketers();
+  }, err => console.error('Could not load marketers:', err));
+}
+
+function renderMarketers(){
+  document.getElementById('statMarketerCount').textContent = marketers.length;
+  const rows = document.getElementById('marketerRows');
+  const emptyState = document.getElementById('marketerEmptyState');
+
+  if(marketers.length === 0){
+    rows.innerHTML = '';
+    emptyState.classList.remove('hidden');
+    document.getElementById('statCommissionOwed').textContent = '$0';
+    return;
+  }
+  emptyState.classList.add('hidden');
+
+  // Commission only counts sales that actually got paid, and only the
+  // referral tag on the original quote determines who gets credit.
+  const paidReferred = latestPurchases.filter(p => p.referralCode && (p.status === 'paid' || p.status === 'deposit_paid'));
+  const threeMonthsAgo = new Date();
+  threeMonthsAgo.setMonth(threeMonthsAgo.getMonth() - 3);
+  let totalOwed = 0;
+
+  rows.innerHTML = marketers.map(m => {
+    const theirSales = paidReferred.filter(p => p.referralCode === m.code);
+    // Commission is capped at the template's suggested price, not the actual
+    // amount paid — so a marketer has no financial incentive to push a
+    // customer's price above what's fair, even though the business still
+    // collects the full amount if a customer genuinely pays more.
+    const revenue = theirSales.reduce((sum, p) => sum + Math.min(p.amount || 0, p.suggestedPrice || p.amount || 0), 0);
+    const commission = Math.round(revenue * (Number(m.tier) / 100));
+    totalOwed += commission;
+
+    // 3-month activity check: most recent paid sale, or join date if they've
+    // never had one — if that's more than 3 months ago, flag for reapplication.
+    const saleDates = theirSales.map(p => p.timestamp ? p.timestamp.toDate() : null).filter(Boolean);
+    const joinDate = m.createdAt ? m.createdAt.toDate() : null;
+    const lastActivity = saleDates.length ? new Date(Math.max(...saleDates)) : joinDate;
+    const isInactive = lastActivity && lastActivity < threeMonthsAgo;
+    const statusBadge = isInactive
+      ? '<span class="pill pill-needs_review">Inactive \u2014 must reapply</span>'
+      : '<span class="pill pill-paid">Active</span>';
+
+    return `
+    <tr>
+      <td>${m.name}</td>
+      <td class="mono">${m.code}</td>
+      <td>${m.tier}%</td>
+      <td>${theirSales.length}</td>
+      <td class="mono">$${commission.toLocaleString()}</td>
+      <td>${statusBadge}</td>
+      <td><button onclick="removeMarketer('${m.id}')" style="font-size:.75rem;padding:4px 8px;">Remove</button></td>
+    </tr>`;
+  }).join('');
+
+  document.getElementById('statCommissionOwed').textContent = '$' + totalOwed.toLocaleString();
 }
 
 function markAllSeen(){
@@ -211,6 +351,7 @@ function listenForPurchases(){
     latestPurchases = docs;
     renderPurchaseRows(docs);
     updateNotificationBanner();
+    renderMarketers();
   }, err => {
     document.getElementById('rows').innerHTML = '';
     document.getElementById('emptyState').textContent = 'Could not load purchases — check your Firestore security rules and config.';
