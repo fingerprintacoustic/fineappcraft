@@ -289,15 +289,15 @@
         </div>
       </div>
 
-      <label>Optional add-ons (not included by default \u2014 shown priced separately)</label>
+      <label>Optional add-ons (not included by default \u2014 priced as a share of your app's price)</label>
       <div style="display:flex;flex-direction:column;gap:6px;margin-bottom:10px;">
         <label style="display:flex;align-items:center;gap:8px;font-weight:500;">
           <input type="checkbox" id="addonPayroll" onchange="updateAddonTotal()" style="width:auto;">
-          Payroll &amp; payslips module \u2014 <span class="mono">+$150</span>
+          Payroll &amp; payslips module \u2014 <span class="mono" id="addonPayrollPrice">+$0</span>
         </label>
         <label style="display:flex;align-items:center;gap:8px;font-weight:500;">
           <input type="checkbox" id="addonFinancials" onchange="updateAddonTotal()" style="width:auto;">
-          Financial tools (invoices, receipts, income/expenditure, P&amp;L, balance sheet) \u2014 <span class="mono">+$200</span>
+          Financial tools (invoices, receipts, income/expenditure, P&amp;L, balance sheet) \u2014 <span class="mono" id="addonFinancialsPrice">+$0</span>
         </label>
       </div>
 
@@ -373,7 +373,7 @@
 
       <div class="pay-options" id="payOptionsGroup">
         <button class="btn btn-primary" onclick="markPaid()" id="payStripeBtn">Pay with Stripe</button>
-        <button class="btn btn-ghost" onclick="markPaid()" id="payPaypalBtn">Pay with PayPal</button>
+        <button class="btn btn-ghost" onclick="payWithPaypal()" id="payPaypalBtn">Pay with PayPal</button>
         <button class="btn btn-ghost" onclick="markPaid()" id="paySquareBtn">Pay with Square</button>
         <button class="btn btn-ghost" onclick="window.print()">Download / print receipt</button>
       </div>
@@ -388,11 +388,12 @@
         <h3>Step 6 · Go live</h3>
         <p style="color:var(--slate);font-size:.9rem;">Payment confirms, then choose where your app should live.</p>
         <label>Where do you want to host it?</label>
-        <select id="hostChoice">
-          <option value="netlify">Netlify (fast, free tier)</option>
-          <option value="vercel">Vercel (fast, free tier)</option>
-          <option value="own">I already have hosting — just give me the files</option>
+        <select id="hostChoice" onchange="updateHostChoiceNote()">
+          <option value="netlify">Netlify (fast, free tier) \u2014 included</option>
+          <option value="vercel">Vercel (fast, free tier) \u2014 included</option>
+          <option value="own">Full source code &amp; rebuild rights (self-host anywhere)</option>
         </select>
+        <p id="sourceCodeNote" class="hidden" style="font-size:.85rem;color:#B9770A;margin-top:8px;">Getting the full source files (not just a live link) costs extra \u2014 <strong id="sourceCodePrice">$0</strong>, since it includes the right to rebuild and reuse the code freely.</p>
         <button class="btn btn-accent" style="margin-top:14px;" onclick="deployApp()">Deploy my app</button>
         <div class="deploy-status" id="deployStatus"></div>
       </div>
@@ -594,6 +595,11 @@ try {
 }
 let currentPurchaseId = null; // Firestore doc id for the in-progress quote, set on submit
 
+// Referral tracking — a marketer's link looks like yoursite.com/?ref=CODE.
+// The code rides along with the quote so commission is computed later from
+// the real, negotiated price — never something the marketer sets themselves.
+const referralCode = new URLSearchParams(window.location.search).get('ref') || null;
+
 // ---- Email notifications (EmailJS — sends straight from the browser, no backend) ----
 // Sign up free at emailjs.com, connect your email inbox as a "service," and
 // create a template. Then replace the three placeholders below with your
@@ -617,16 +623,22 @@ function sendOwnerNotification(subject, summary){
 }
 
 const templates = [
-  {id:'business', name:'Business & Services', desc:'Bookings, quotes, client portals', min:800, sug:1500, max:2500},
-  {id:'ecommerce', name:'E-commerce', desc:'Product catalog, cart, checkout', min:1500, sug:3000, max:5000},
-  {id:'delivery', name:'Food & Delivery', desc:'Orders, riders, live tracking', min:2500, sug:4500, max:8000},
-  {id:'booking', name:'Booking & Scheduling', desc:'Calendars, reminders, payments', min:1200, sug:2400, max:4000},
-  {id:'community', name:'Community & Directory', desc:'Member listings, profiles, search', min:1000, sug:2000, max:3500},
-  {id:'marketplace', name:'Media & Marketplace', desc:'Uploads, listings, transactions', min:2000, sug:4000, max:7000},
-  {id:'education', name:'Education (Kindergarten–University)', desc:'Subscription-based — courses, grading, attendance, subjects like math, science, nursing', min:1800, sug:3800, max:7500},
-  {id:'autoparts', name:'Auto Parts Verification', desc:'Check oil filter, tire size, engine specs by VIN or year/make/model', min:1500, sug:3200, max:6000},
-  {id:'nemt', name:'Non-Emergency Medical Transportation', desc:'Schedule rides to appointments, dialysis, therapy, and pickups', min:1500, sug:3000, max:5500},
-  {id:'merch', name:'Branded Merch Store', desc:'Sell hoodies, t-shirts & branded apparel with your own logo', min:1200, sug:2400, max:4000},
+  {id:'business', name:'Business & Services', desc:'Bookings, quotes, client portals', min:3500, sug:6500, max:12000},
+  {id:'ecommerce', name:'E-commerce', desc:'Product catalog, cart, checkout', min:8000, sug:16000, max:32000},
+  {id:'delivery', name:'Food & Delivery', desc:'Orders, riders, live tracking', min:14000, sug:26000, max:50000},
+  {id:'booking', name:'Booking & Scheduling', desc:'Calendars, reminders, payments', min:5000, sug:9500, max:18000},
+  {id:'community', name:'Community & Directory', desc:'Member listings, profiles, search', min:4500, sug:8500, max:16000},
+  {id:'marketplace', name:'Media & Marketplace', desc:'Uploads, listings, transactions', min:11000, sug:21000, max:40000},
+  {id:'education', name:'Education (Kindergarten–University)', desc:'Subscription-based — courses, grading, attendance, subjects like math, science, nursing', min:11000, sug:22000, max:45000},
+  {id:'autoparts', name:'Auto Parts Verification', desc:'Check oil filter, tire size, engine specs by VIN or year/make/model', min:9000, sug:17000, max:32000},
+  {id:'nemt', name:'Non-Emergency Medical Transportation', desc:'Schedule rides to appointments, dialysis, therapy, and pickups', min:9000, sug:17000, max:32000},
+  {id:'merch', name:'Branded Merch Store', desc:'Sell hoodies, t-shirts & branded apparel with your own logo', min:5000, sug:9500, max:18000},
+  {id:'calling', name:'International Calling & SMS', desc:'Calls and texts over data, prepaid balance top-up', min:1400000, sug:2600000, max:5000000},
+  {id:'streaming', name:'Live TV / Streaming', desc:'Channel guide and live playback for your own content', min:1000000, sug:1900000, max:3600000},
+  {id:'filetransfer', name:'Peer-to-Peer File Transfer', desc:'Direct device-to-device file sharing, no upload storage', min:650000, sug:1250000, max:2400000},
+  {id:'digitalproducts', name:'Digital Product Sales', desc:'Sell downloadable designs, plans, or digital files', min:450000, sug:850000, max:1600000},
+  {id:'costsplit', name:'Group Cost Splitting', desc:'Split shared costs — hotel rooms, trips, group expenses', min:450000, sug:850000, max:1600000},
+  {id:'donations', name:'Donations & Tithes Tracker', desc:'Record and track member giving, private per-member access', min:650000, sug:1250000, max:2400000},
 ];
 
 let selectedTemplate = templates[0];
@@ -700,20 +712,35 @@ function updateMeter(){
   updateOffer();
 }
 
-const ADDON_PRICES = { payroll: 150, financials: 200 };
+const ADDON_RATES = {
+  payroll:    { pct: 0.12, min: 700 },
+  financials: { pct: 0.18, min: 1000 },
+};
+
+function getCurrentBaseAmount(){
+  const t = selectedTemplate;
+  const pct = document.getElementById('offerSlider').value;
+  return Math.round(t.min + (t.max - t.min) * (pct/100));
+}
+
+function getAddonPrice(key){
+  const rate = ADDON_RATES[key];
+  const base = getCurrentBaseAmount();
+  return Math.max(rate.min, Math.round(base * rate.pct));
+}
 
 function getAddonTotal(){
   let total = 0;
-  if(document.getElementById('addonPayroll').checked) total += ADDON_PRICES.payroll;
-  if(document.getElementById('addonFinancials').checked) total += ADDON_PRICES.financials;
+  if(document.getElementById('addonPayroll').checked) total += getAddonPrice('payroll');
+  if(document.getElementById('addonFinancials').checked) total += getAddonPrice('financials');
   return total;
 }
 
 function updateAddonTotal(){
+  document.getElementById('addonPayrollPrice').textContent = '+$' + getAddonPrice('payroll').toLocaleString();
+  document.getElementById('addonFinancialsPrice').textContent = '+$' + getAddonPrice('financials').toLocaleString();
   const addonTotal = getAddonTotal();
-  const t = selectedTemplate;
-  const pct = document.getElementById('offerSlider').value;
-  const baseAmount = Math.round(t.min + (t.max - t.min) * (pct/100));
+  const baseAmount = getCurrentBaseAmount();
   const line = document.getElementById('addonTotalLine');
   if(addonTotal > 0){
     line.classList.remove('hidden');
@@ -780,13 +807,13 @@ function submitQuote(){
   if(wantsPayroll){
     const row = document.createElement('tr');
     row.className = 'invAddonRow';
-    row.innerHTML = '<td>+ Payroll &amp; payslips add-on</td><td style="text-align:right;" class="mono">$'+ADDON_PRICES.payroll.toLocaleString()+'</td>';
+    row.innerHTML = '<td>+ Payroll &amp; payslips add-on</td><td style="text-align:right;" class="mono">$'+getAddonPrice('payroll').toLocaleString()+'</td>';
     totalRow.parentNode.insertBefore(row, totalRow);
   }
   if(wantsFinancials){
     const row = document.createElement('tr');
     row.className = 'invAddonRow';
-    row.innerHTML = '<td>+ Financial tools add-on</td><td style="text-align:right;" class="mono">$'+ADDON_PRICES.financials.toLocaleString()+'</td>';
+    row.innerHTML = '<td>+ Financial tools add-on</td><td style="text-align:right;" class="mono">$'+getAddonPrice('financials').toLocaleString()+'</td>';
     totalRow.parentNode.insertBefore(row, totalRow);
   }
   document.getElementById('invTotal').textContent = '$'+amount.toLocaleString();
@@ -801,6 +828,7 @@ function submitQuote(){
   paymentStage = 'unpaid';
   trialEndsAt = null;
   purchasedAddons = { payroll: wantsPayroll, financials: wantsFinancials };
+  sourceCodeUnlocked = false;
   document.getElementById('paymentPlanChoice').classList.remove('hidden');
   document.getElementById('payOptionsGroup').classList.remove('hidden');
   document.getElementById('trialOptionsGroup').classList.add('hidden');
@@ -823,7 +851,9 @@ function submitQuote(){
       customerEmail: email,
       template: t.name,
       amount,
+      suggestedPrice: t.sug,
       status: 'unpaid',
+      referralCode: referralCode,
       timestamp: firebase.firestore.FieldValue.serverTimestamp(),
     }).then(docRef => {
       currentPurchaseId = docRef.id;
@@ -878,6 +908,119 @@ function startTrial(){
       trialEndsAt: firebase.firestore.Timestamp.fromDate(end),
     }).catch(err => console.error('Could not update trial status:', err));
   }
+}
+
+// ---- Real PayPal payments (backed by Cloud Functions — see the chat/memory for setup) ----
+const PAYPAL_CREATE_ORDER_URL = 'https://createpaypalorder-63876261140.us-central1.run.app';
+const PAYPAL_CAPTURE_ORDER_URL = 'https://capturepaypalorder-63876261140.us-central1.run.app';
+
+function currentPaymentStage(){
+  if(paymentStage === 'deposit_paid') return 'balance';
+  return paymentPlan === 'deposit' ? 'deposit' : 'full';
+}
+
+async function payWithPaypal(){
+  if(!currentPurchaseId){
+    alert('Please submit your quote first.');
+    return;
+  }
+  const stage = currentPaymentStage();
+  const btn = document.getElementById('payPaypalBtn');
+  const originalText = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = 'Connecting to PayPal…';
+
+  const returnUrl = window.location.origin + window.location.pathname
+    + '?fac_doc=' + encodeURIComponent(currentPurchaseId)
+    + '&fac_collection=fineappcraft_purchases'
+    + '&fac_stage=' + encodeURIComponent(stage);
+
+  try{
+    const res = await fetch(PAYPAL_CREATE_ORDER_URL, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({
+        docId: currentPurchaseId,
+        collection: 'fineappcraft_purchases',
+        stage: stage,
+        returnUrl: returnUrl,
+        cancelUrl: returnUrl,
+      }),
+    });
+    const data = await res.json();
+    if(!res.ok || !data.approveUrl){
+      alert('Could not start PayPal checkout. Please try again or use another payment method.');
+      btn.disabled = false;
+      btn.textContent = originalText;
+      return;
+    }
+    window.location.href = data.approveUrl; // send the customer to PayPal's real checkout page
+  }catch(err){
+    console.error('PayPal order creation failed:', err);
+    alert('Could not reach the payment service. Please check your connection and try again.');
+    btn.disabled = false;
+    btn.textContent = originalText;
+  }
+}
+
+async function capturePendingPaypalPayment(){
+  const params = new URLSearchParams(window.location.search);
+  const docId = params.get('fac_doc');
+  const collection = params.get('fac_collection');
+  const stage = params.get('fac_stage');
+  const orderId = params.get('token'); // PayPal appends this on return
+
+  if(!docId || !orderId) return; // not returning from a PayPal approval
+
+  currentPurchaseId = docId;
+  document.getElementById('invoicePlaceholder').classList.add('hidden');
+  document.getElementById('invoiceBox').classList.remove('hidden');
+  document.getElementById('paymentPlanChoice').classList.add('hidden');
+  document.getElementById('payOptionsGroup').classList.add('hidden');
+  document.getElementById('invCustomer').textContent = 'Confirming your payment…';
+
+  try{
+    const res = await fetch(PAYPAL_CAPTURE_ORDER_URL, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ orderId, docId, collection, stage }),
+    });
+    const data = await res.json();
+    if(res.ok && data.success){
+      const p = data.purchase || {};
+      agreedPrice = p.amount || 0;
+      document.getElementById('invCustomer').textContent = p.customerName + (p.customerEmail ? ' <'+p.customerEmail+'>' : '');
+      document.getElementById('invLineDesc').textContent = p.template + ' app template';
+      document.getElementById('invLineAmt').textContent = '$'+(p.amount||0).toLocaleString();
+      document.getElementById('invTotal').textContent = '$'+(p.amount||0).toLocaleString();
+      document.getElementById('invNum').textContent = p.invoiceNum || '';
+      document.getElementById('invDate').textContent = new Date().toLocaleDateString();
+
+      if(data.status === 'paid'){
+        document.getElementById('invStatus').textContent = 'PAID';
+        document.getElementById('invStatus').className = 'pill pill-paid';
+        document.getElementById('deployPanel').classList.remove('locked');
+        paymentStage = 'paid';
+      } else if(data.status === 'deposit_paid'){
+        document.getElementById('invStatus').textContent = 'DEPOSIT PAID — BALANCE DUE';
+        document.getElementById('invStatus').className = 'pill pill-unpaid';
+        paymentStage = 'deposit_paid';
+        document.getElementById('payOptionsGroup').classList.remove('hidden');
+        updatePayButtonLabels();
+      }
+      document.getElementById('quoteConfirm').textContent = 'Payment confirmed via PayPal ✓';
+      document.getElementById('invoice-section').scrollIntoView({behavior:'smooth'});
+    } else {
+      document.getElementById('invCustomer').textContent = 'Could not confirm payment — please contact us if you were charged.';
+    }
+  }catch(err){
+    console.error('PayPal capture failed:', err);
+    document.getElementById('invCustomer').textContent = 'Could not confirm payment — please contact us if you were charged.';
+  }
+
+  // Clean the PayPal params out of the URL so a page refresh doesn't retry capture.
+  const cleanUrl = window.location.origin + window.location.pathname;
+  window.history.replaceState({}, document.title, cleanUrl);
 }
 
 function markPaid(){
@@ -1013,7 +1156,7 @@ function copyBrief(){
 
 // ---- App consolidation ----
 let consolidateRowCount = 0;
-const CONSOLIDATE_BASE_PER_APP = 600;
+const CONSOLIDATE_BASE_PER_APP = 3500;
 
 function addConsolidateRow(){
   consolidateRowCount++;
@@ -1117,9 +1260,9 @@ addConsolidateRow();
 
 // ---- Maintenance tickets ----
 const maintenanceTypes = {
-  content: {name:'Content/text update', base:35},
-  bugfix:  {name:"Something's broken", base:75},
-  feature: {name:'Small feature addition', base:120},
+  content: {name:'Content/text update', base:150},
+  bugfix:  {name:"Something's broken", base:350},
+  feature: {name:'Small feature addition', base:600},
   other:   {name:'Something else', base:null}, // null = needs manual review, no auto price
 };
 let currentTicketId = null;
@@ -1246,12 +1389,12 @@ document.getElementById('cfgLogo').addEventListener('change', (e)=>{
 // category has no real employer/staffing concept, applicable=false shows
 // a plain "Not applicable" note instead, so every template is consistent
 // about whether this feature exists for it.
-function payrollSectionHTML(applicable, included){
+function payrollSectionHTML(applicable, included, price){
   if(!applicable){
     return '<section><h3>Payroll &amp; payslips</h3><p style="color:#888;font-size:.85rem;">Not applicable to this type of app.</p></section>';
   }
   if(!included){
-    return '<section><h3>Payroll &amp; payslips</h3><p style="color:#888;font-size:.85rem;">Not included in this app. Add-on price: <strong>+$150</strong>. Ask about adding it any time.</p></section>';
+    return '<section><h3>Payroll &amp; payslips</h3><p style="color:#888;font-size:.85rem;">Not included in this app. Add-on price: <strong>+$' + (price||0).toLocaleString() + '</strong>. Ask about adding it any time.</p></section>';
   }
   return '<section>\n'
     + '  <label style="display:flex;align-items:center;gap:8px;font-size:.9rem;font-weight:600;">\n'
@@ -1526,12 +1669,12 @@ const FINANCIALS_SCRIPT = ''
   + '  document.getElementById("finBalanceSheetOut").innerHTML = html;\n'
   + '}\n';
 
-function financialsSectionHTML(applicable, included){
+function financialsSectionHTML(applicable, included, price){
   if(!applicable){
     return '<section><h3>Financial tools</h3><p style="color:#888;font-size:.85rem;">Not applicable to this type of app.</p></section>';
   }
   if(!included){
-    return '<section><h3>Financial tools</h3><p style="color:#888;font-size:.85rem;">Not included in this app. Add-on price: <strong>+$200</strong> (invoices, receipts, income/expenditure, P&amp;L, balance sheet). Ask about adding it any time.</p></section>';
+    return '<section><h3>Financial tools</h3><p style="color:#888;font-size:.85rem;">Not included in this app. Add-on price: <strong>+$' + (price||0).toLocaleString() + '</strong> (invoices, receipts, income/expenditure, P&amp;L, balance sheet). Ask about adding it any time.</p></section>';
   }
   return '<section>\n'
     + '  <label style="display:flex;align-items:center;gap:8px;font-size:.9rem;font-weight:600;">\n'
@@ -1621,15 +1764,233 @@ function financialsSectionHTML(applicable, included){
 const TEMPLATE_SKELETONS = {
   business: (c)=>{
     return '<h1>' + c.name + '</h1><p>' + c.tagline + '</p>\n'
-      + '<section><h2>Book a service</h2><p>Simple booking form goes here.</p></section>\n'
-      + payrollSectionHTML(true, c.includePayroll)
-      + financialsSectionHTML(true, c.includeFinancials);
+      + '<section>\n'
+      + '  <h2>Book a service</h2>\n'
+      + '  <select id="bizService" style="padding:8px;width:100%;margin-bottom:8px;">\n'
+      + '    <option>Consultation</option><option>Repair</option><option>Installation</option><option>Custom request</option>\n'
+      + '  </select>\n'
+      + '  <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px;">\n'
+      + '    <input type="date" id="bizDate" style="padding:8px;">\n'
+      + '    <input type="time" id="bizTime" style="padding:8px;">\n'
+      + '  </div>\n'
+      + '  <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px;">\n'
+      + '    <input id="bizName" placeholder="Your name" style="padding:8px;flex:1;">\n'
+      + '    <input id="bizContact" placeholder="Phone or email" style="padding:8px;flex:1;">\n'
+      + '  </div>\n'
+      + '  <button onclick="bookBizService()">Book appointment</button>\n'
+      + '  <div id="bizConfirm" style="display:none;margin-top:12px;padding:14px;border-radius:8px;background:#E7F7EF;color:#1A8F5C;font-weight:600;"></div>\n'
+      + '</section>\n'
+      + '<script>\n'
+      + 'function bookBizService(){\n'
+      + '  var service = document.getElementById("bizService").value;\n'
+      + '  var date = document.getElementById("bizDate").value || "(no date chosen)";\n'
+      + '  var time = document.getElementById("bizTime").value || "(no time chosen)";\n'
+      + '  var name = document.getElementById("bizName").value || "there";\n'
+      + '  var el = document.getElementById("bizConfirm");\n'
+      + '  el.style.display = "block";\n'
+      + '  el.textContent = "Booked! " + name + ", your " + service.toLowerCase() + " is set for " + date + " at " + time + ".";\n'
+      + '  el.scrollIntoView({behavior:"smooth", block:"nearest"});\n'
+      + '}\n'
+      + '<\/script>\n'
+      + payrollSectionHTML(true, c.includePayroll, c.payrollAddonPrice)
+      + financialsSectionHTML(true, c.includeFinancials, c.financialsAddonPrice);
   },
-  ecommerce: (c)=>`<h1>${c.name}</h1><p>${c.tagline}</p><section><h2>Shop our products</h2><p>Product grid + cart goes here.</p></section>${payrollSectionHTML(true, c.includePayroll)}${financialsSectionHTML(true, c.includeFinancials)}`,
-  delivery: (c)=>`<h1>${c.name}</h1><p>${c.tagline}</p><section><h2>Order now</h2><p>Menu + live order tracking goes here.</p></section>${payrollSectionHTML(true, c.includePayroll)}${financialsSectionHTML(true, c.includeFinancials)}`,
-  booking: (c)=>`<h1>${c.name}</h1><p>${c.tagline}</p><section><h2>Pick a time</h2><p>Calendar + reminders go here.</p></section>${payrollSectionHTML(true, c.includePayroll)}${financialsSectionHTML(true, c.includeFinancials)}`,
-  community: (c)=>`<h1>${c.name}</h1><p>${c.tagline}</p><section><h2>Browse members</h2><p>Directory + profiles go here.</p></section>${payrollSectionHTML(true, c.includePayroll)}${financialsSectionHTML(true, c.includeFinancials)}`,
-  marketplace: (c)=>`<h1>${c.name}</h1><p>${c.tagline}</p><section><h2>Browse listings</h2><p>Uploads + listings go here.</p></section>${payrollSectionHTML(true, c.includePayroll)}${financialsSectionHTML(true, c.includeFinancials)}`,
+  ecommerce: (c)=>'<h1>' + c.name + '</h1><p>' + c.tagline + '</p>\n'
+    + '<section>\n'
+    + '  <h2>Shop our products</h2>\n'
+    + '  <div id="shopGrid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:14px;"></div>\n'
+    + '  <div style="margin-top:18px;padding:14px;border:1px solid #eee;border-radius:8px;">\n'
+    + '    <h3 style="margin:0 0 8px;">Cart</h3>\n'
+    + '    <div id="cartItems" style="font-size:.9rem;color:#888;">Cart is empty.</div>\n'
+    + '    <p style="font-weight:700;margin-top:8px;">Total: $<span id="cartTotal">0.00</span></p>\n'
+    + '    <button onclick="checkoutCart()">Checkout</button>\n'
+    + '    <div id="checkoutConfirm" style="display:none;margin-top:10px;padding:12px;border-radius:8px;background:#E7F7EF;color:#1A8F5C;font-weight:600;"></div>\n'
+    + '  </div>\n'
+    + '</section>\n'
+    + '<script>\n'
+    + 'var SHOP_PRODUCTS = [{name:"Product A",price:24.99},{name:"Product B",price:39.99},{name:"Product C",price:14.99}];\n'
+    + 'var cart = [];\n'
+    + 'function renderShop(){\n'
+    + '  document.getElementById("shopGrid").innerHTML = SHOP_PRODUCTS.map(function(p,i){\n'
+    + '    return \'<div style="border:1px solid #eee;border-radius:8px;padding:12px;text-align:center;">\'\n'
+    + '      + \'<div style="height:80px;background:#f5f5f5;border-radius:6px;margin-bottom:8px;"></div>\'\n'
+    + '      + \'<div style="font-weight:600;">\' + p.name + \'</div>\'\n'
+    + '      + \'<div style="color:#888;font-size:.85rem;margin-bottom:8px;">$\' + p.price.toFixed(2) + \'</div>\'\n'
+    + '      + \'<button onclick="addToCart(\' + i + \')">Add to cart</button></div>\';\n'
+    + '  }).join("");\n'
+    + '}\n'
+    + 'function addToCart(i){ cart.push(SHOP_PRODUCTS[i]); renderCart(); }\n'
+    + 'function renderCart(){\n'
+    + '  var itemsEl = document.getElementById("cartItems");\n'
+    + '  if(cart.length === 0){ itemsEl.textContent = "Cart is empty."; document.getElementById("cartTotal").textContent = "0.00"; return; }\n'
+    + '  itemsEl.innerHTML = cart.map(function(p){ return \'<div>\' + p.name + \' \u2014 $\' + p.price.toFixed(2) + \'</div>\'; }).join("");\n'
+    + '  var total = cart.reduce(function(sum,p){ return sum + p.price; }, 0);\n'
+    + '  document.getElementById("cartTotal").textContent = total.toFixed(2);\n'
+    + '}\n'
+    + 'function checkoutCart(){\n'
+    + '  if(cart.length === 0){ alert("Your cart is empty."); return; }\n'
+    + '  var el = document.getElementById("checkoutConfirm");\n'
+    + '  el.style.display = "block";\n'
+    + '  el.textContent = "Order placed \u2014 total $" + document.getElementById("cartTotal").textContent + ". A payment step would go here.";\n'
+    + '  cart = []; renderCart();\n'
+    + '}\n'
+    + 'renderShop();\n'
+    + '<\/script>'
+    + payrollSectionHTML(true, c.includePayroll, c.payrollAddonPrice) + financialsSectionHTML(true, c.includeFinancials, c.financialsAddonPrice),
+  delivery: (c)=>'<h1>' + c.name + '</h1><p>' + c.tagline + '</p>\n'
+    + '<section>\n'
+    + '  <h2>Order now</h2>\n'
+    + '  <div id="menuList"></div>\n'
+    + '  <p style="font-weight:700;margin-top:10px;">Order total: $<span id="orderTotal">0.00</span></p>\n'
+    + '  <button onclick="placeOrder()">Place order</button>\n'
+    + '  <div id="orderStatusBox" style="display:none;margin-top:14px;padding:14px;border-radius:8px;background:#F1F4FA;">\n'
+    + '    <strong id="orderStatusText"></strong>\n'
+    + '    <button onclick="advanceOrder()" style="margin-top:8px;display:block;">Simulate next status</button>\n'
+    + '  </div>\n'
+    + '</section>\n'
+    + '<script>\n'
+    + 'var MENU = [{name:"Burger",price:8},{name:"Pizza Slice",price:12},{name:"Salad",price:7},{name:"Drink",price:3}];\n'
+    + 'var qty = MENU.map(function(){ return 0; });\n'
+    + 'var ORDER_STATUSES = ["Order received","Preparing","Rider on the way","Delivered"];\n'
+    + 'var statusIndex = 0;\n'
+    + 'function renderMenu(){\n'
+    + '  document.getElementById("menuList").innerHTML = MENU.map(function(m,i){\n'
+    + '    return \'<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid #eee;">\'\n'
+    + '      + \'<span>\' + m.name + \' \u2014 $\' + m.price.toFixed(2) + \'</span>\'\n'
+    + '      + \'<span><button onclick="changeQty(\' + i + \',-1)">\u2212</button> \' + qty[i] + \' <button onclick="changeQty(\' + i + \',1)">+</button></span></div>\';\n'
+    + '  }).join("");\n'
+    + '}\n'
+    + 'function changeQty(i,delta){ qty[i] = Math.max(0, qty[i]+delta); renderMenu(); updateOrderTotal(); }\n'
+    + 'function updateOrderTotal(){\n'
+    + '  var total = MENU.reduce(function(sum,m,i){ return sum + m.price*qty[i]; }, 0);\n'
+    + '  document.getElementById("orderTotal").textContent = total.toFixed(2);\n'
+    + '}\n'
+    + 'function placeOrder(){\n'
+    + '  if(parseFloat(document.getElementById("orderTotal").textContent) === 0){ alert("Add something to your order first."); return; }\n'
+    + '  statusIndex = 0;\n'
+    + '  var box = document.getElementById("orderStatusBox");\n'
+    + '  box.style.display = "block";\n'
+    + '  document.getElementById("orderStatusText").textContent = ORDER_STATUSES[statusIndex];\n'
+    + '  box.scrollIntoView({behavior:"smooth", block:"nearest"});\n'
+    + '}\n'
+    + 'function advanceOrder(){\n'
+    + '  if(statusIndex < ORDER_STATUSES.length-1) statusIndex++;\n'
+    + '  document.getElementById("orderStatusText").textContent = ORDER_STATUSES[statusIndex];\n'
+    + '}\n'
+    + 'renderMenu();\n'
+    + '<\/script>'
+    + payrollSectionHTML(true, c.includePayroll, c.payrollAddonPrice) + financialsSectionHTML(true, c.includeFinancials, c.financialsAddonPrice),
+  booking: (c)=>'<h1>' + c.name + '</h1><p>' + c.tagline + '</p>\n'
+    + '<section>\n'
+    + '  <h2>Pick a time</h2>\n'
+    + '  <div id="slotList" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:8px;margin-bottom:14px;"></div>\n'
+    + '  <div id="bookingForm" style="display:none;">\n'
+    + '    <p style="font-weight:600;">Selected: <span id="chosenSlot"></span></p>\n'
+    + '    <input id="bookName" placeholder="Your name" style="padding:8px;width:100%;margin-bottom:8px;">\n'
+    + '    <button onclick="confirmBooking()">Confirm booking</button>\n'
+    + '  </div>\n'
+    + '  <div id="bookConfirm" style="display:none;margin-top:12px;padding:14px;border-radius:8px;background:#E7F7EF;color:#1A8F5C;font-weight:600;"></div>\n'
+    + '</section>\n'
+    + '<script>\n'
+    + 'var selectedSlot = null;\n'
+    + 'function buildSlots(){\n'
+    + '  var days = ["Mon","Tue","Wed","Thu","Fri"];\n'
+    + '  var times = ["9:00 AM","11:00 AM","1:00 PM","3:00 PM"];\n'
+    + '  var container = document.getElementById("slotList");\n'
+    + '  container.innerHTML = "";\n'
+    + '  days.forEach(function(d){\n'
+    + '    times.forEach(function(t){\n'
+    + '      var btn = document.createElement("button");\n'
+    + '      btn.textContent = d + " " + t;\n'
+    + '      btn.dataset.slot = d + " " + t;\n'
+    + '      btn.addEventListener("click", function(){ pickSlot(btn, btn.dataset.slot); });\n'
+    + '      container.appendChild(btn);\n'
+    + '    });\n'
+    + '  });\n'
+    + '}\n'
+    + 'function pickSlot(el, slot){\n'
+    + '  selectedSlot = slot;\n'
+    + '  document.getElementById("chosenSlot").textContent = slot;\n'
+    + '  document.getElementById("bookingForm").style.display = "block";\n'
+    + '  document.querySelectorAll("#slotList button").forEach(function(b){ b.style.opacity = "0.6"; });\n'
+    + '  el.style.opacity = "1";\n'
+    + '}\n'
+    + 'function confirmBooking(){\n'
+    + '  var name = document.getElementById("bookName").value || "there";\n'
+    + '  var el = document.getElementById("bookConfirm");\n'
+    + '  el.style.display = "block";\n'
+    + '  el.textContent = "Booked! " + name + ", see you " + selectedSlot + ".";\n'
+    + '  el.scrollIntoView({behavior:"smooth", block:"nearest"});\n'
+    + '}\n'
+    + 'buildSlots();\n'
+    + '<\/script>'
+    + payrollSectionHTML(true, c.includePayroll, c.payrollAddonPrice) + financialsSectionHTML(true, c.includeFinancials, c.financialsAddonPrice),
+  community: (c)=>'<h1>' + c.name + '</h1><p>' + c.tagline + '</p>\n'
+    + '<section>\n'
+    + '  <h2>Browse members</h2>\n'
+    + '  <input id="memberSearch" placeholder="Search members..." style="padding:8px;width:100%;margin-bottom:12px;" oninput="renderMembers()">\n'
+    + '  <div id="memberList"></div>\n'
+    + '</section>\n'
+    + '<script>\n'
+    + 'var MEMBERS = [\n'
+    + '  {name:"Alex Rivera", role:"Organizer", bio:"Runs weekly meetups and events."},\n'
+    + '  {name:"Jordan Lee", role:"Member", bio:"Joined last spring, loves connecting people."},\n'
+    + '  {name:"Sam Patel", role:"Volunteer", bio:"Helps coordinate community projects."},\n'
+    + '  {name:"Casey Kim", role:"Member", bio:"New here, excited to get involved."},\n'
+    + '  {name:"Morgan Diaz", role:"Moderator", bio:"Keeps discussions friendly and on-topic."}\n'
+    + '];\n'
+    + 'function renderMembers(){\n'
+    + '  var q = document.getElementById("memberSearch").value.toLowerCase();\n'
+    + '  var filtered = MEMBERS.filter(function(m){ return m.name.toLowerCase().indexOf(q) !== -1; });\n'
+    + '  document.getElementById("memberList").innerHTML = filtered.map(function(m){\n'
+    + '    return \'<div style="border:1px solid #eee;border-radius:8px;padding:12px;margin-bottom:8px;">\'\n'
+    + '      + \'<strong>\' + m.name + \'</strong> \u00b7 <span style="color:#888;">\' + m.role + \'</span>\'\n'
+    + '      + \'<p style="margin:4px 0 0;font-size:.85rem;color:#888;">\' + m.bio + \'</p></div>\';\n'
+    + '  }).join("") || \'<p style="color:#888;">No members match that search.</p>\';\n'
+    + '}\n'
+    + 'renderMembers();\n'
+    + '<\/script>'
+    + payrollSectionHTML(true, c.includePayroll, c.payrollAddonPrice) + financialsSectionHTML(true, c.includeFinancials, c.financialsAddonPrice),
+  marketplace: (c)=>'<h1>' + c.name + '</h1><p>' + c.tagline + '</p>\n'
+    + '<section>\n'
+    + '  <h2>Browse listings</h2>\n'
+    + '  <div id="listingsGrid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:12px;margin-bottom:16px;"></div>\n'
+    + '  <h3>List a new item</h3>\n'
+    + '  <div style="display:flex;gap:8px;flex-wrap:wrap;">\n'
+    + '    <input id="listName" placeholder="Item name" style="padding:8px;flex:2;">\n'
+    + '    <input id="listPrice" type="number" placeholder="Price ($)" style="padding:8px;flex:1;">\n'
+    + '    <input id="listCategory" placeholder="Category" style="padding:8px;flex:1;">\n'
+    + '  </div>\n'
+    + '  <button onclick="addListing()" style="margin-top:8px;">Add listing</button>\n'
+    + '</section>\n'
+    + '<script>\n'
+    + 'var LISTINGS = [\n'
+    + '  {name:"Vintage Desk", price:120, category:"Furniture"},\n'
+    + '  {name:"Mountain Bike", price:280, category:"Sports"},\n'
+    + '  {name:"Camera Lens", price:95, category:"Electronics"}\n'
+    + '];\n'
+    + 'function renderListings(){\n'
+    + '  document.getElementById("listingsGrid").innerHTML = LISTINGS.map(function(l){\n'
+    + '    return \'<div style="border:1px solid #eee;border-radius:8px;padding:12px;">\'\n'
+    + '      + \'<div style="height:70px;background:#f5f5f5;border-radius:6px;margin-bottom:8px;"></div>\'\n'
+    + '      + \'<div style="font-weight:600;">\' + l.name + \'</div>\'\n'
+    + '      + \'<div style="color:#888;font-size:.85rem;">$\' + l.price + \' \u00b7 \' + l.category + \'</div></div>\';\n'
+    + '  }).join("");\n'
+    + '}\n'
+    + 'function addListing(){\n'
+    + '  var name = document.getElementById("listName").value;\n'
+    + '  var price = parseFloat(document.getElementById("listPrice").value) || 0;\n'
+    + '  var category = document.getElementById("listCategory").value || "General";\n'
+    + '  if(!name){ alert("Give the item a name first."); return; }\n'
+    + '  LISTINGS.unshift({name:name, price:price, category:category});\n'
+    + '  document.getElementById("listName").value = "";\n'
+    + '  document.getElementById("listPrice").value = "";\n'
+    + '  document.getElementById("listCategory").value = "";\n'
+    + '  renderListings();\n'
+    + '}\n'
+    + 'renderListings();\n'
+    + '<\/script>'
+    + payrollSectionHTML(true, c.includePayroll, c.payrollAddonPrice) + financialsSectionHTML(true, c.includeFinancials, c.financialsAddonPrice),
   education: (c)=>{
     const level = c.level || 'k12';
     const byLevel = {
@@ -1676,7 +2037,7 @@ const TEMPLATE_SKELETONS = {
             <button onclick="subscribeEdu('school')">${planLabels.orgBtn}</button>
           </div>
         </div>
-        <p id="eduSubStatus" style="margin-top:10px;font-weight:600;color:#1a8f5c;"></p>
+        <div id="eduSubStatus" style="display:none;margin-top:14px;padding:14px 16px;border-radius:8px;background:#E7F7EF;color:#1A8F5C;font-weight:600;"></div>
         <p style="color:#888;font-size:.78rem;">Payment placeholder — connect a real Stripe subscription/Checkout link before launch.</p>
       </section>
       <section><h2>${section.h}</h2><p>${section.p}</p></section>
@@ -1686,13 +2047,16 @@ const TEMPLATE_SKELETONS = {
         <p style="color:#888;font-size:.78rem;margin-top:10px;">Starter subject list for this level — add, remove, or customize per school.</p>
       </section>
       <section><h2>Parent/student portal</h2><p>Messages, announcements, and progress updates go here.</p></section>
-      ${payrollSectionHTML(true, c.includePayroll)}
-      ${financialsSectionHTML(true, c.includeFinancials)}
+      ${payrollSectionHTML(true, c.includePayroll, c.payrollAddonPrice)}
+      ${financialsSectionHTML(true, c.includeFinancials, c.financialsAddonPrice)}
       <script>
       function subscribeEdu(kind){
-        document.getElementById('eduSubStatus').textContent = kind === 'school'
+        const statusEl = document.getElementById('eduSubStatus');
+        statusEl.style.display = 'block';
+        statusEl.textContent = kind === 'school'
           ? 'Subscribed as a school ✓ — all students at this institution now have access.'
           : 'Subscribed ✓ — you now have full access.';
+        statusEl.scrollIntoView({behavior:'smooth', block:'nearest'});
       }
       <\/script>`;
   },
@@ -1821,8 +2185,8 @@ const TEMPLATE_SKELETONS = {
       }).join('');
     }
     <\/script>
-    ${payrollSectionHTML(true, c.includePayroll)}
-    ${financialsSectionHTML(true, c.includeFinancials)}`,
+    ${payrollSectionHTML(true, c.includePayroll, c.payrollAddonPrice)}
+    ${financialsSectionHTML(true, c.includeFinancials, c.financialsAddonPrice)}`,
   merch: (c)=>{
     const websiteLink = c.merchWebsite
       ? '<p style="margin-top:4px;"><a href="' + c.merchWebsite + '" target="_blank" style="color:#2AA9C7;">Visit our full site \u2192</a></p>'
@@ -1904,9 +2268,150 @@ const TEMPLATE_SKELETONS = {
       + '}\n'
       + 'renderMerchGrid();\n'
       + '<\/script>'
-      + payrollSectionHTML(true, c.includePayroll)
-      + financialsSectionHTML(true, c.includeFinancials);
+      + payrollSectionHTML(true, c.includePayroll, c.payrollAddonPrice)
+      + financialsSectionHTML(true, c.includeFinancials, c.financialsAddonPrice);
   },
+  calling: (c)=>'<h1>' + c.name + '</h1><p>' + c.tagline + '</p>\n'
+    + '<section>\n'
+    + '  <h2>Balance: $<span id="callBalance">0.00</span></h2>\n'
+    + '  <div style="display:flex;gap:8px;margin-bottom:14px;">\n'
+    + '    <button onclick="topUp(10)">+ $10</button><button onclick="topUp(25)">+ $25</button><button onclick="topUp(50)">+ $50</button>\n'
+    + '  </div>\n'
+    + '  <h3>Rate lookup</h3>\n'
+    + '  <select id="callDestination" onchange="showRate()" style="padding:8px;width:100%;margin-bottom:8px;">\n'
+    + '    <option value="0.02">United States \u2014 $0.02/min</option>\n'
+    + '    <option value="0.18">Zimbabwe \u2014 $0.18/min</option>\n'
+    + '    <option value="0.05">United Kingdom \u2014 $0.05/min</option>\n'
+    + '    <option value="0.09">South Africa \u2014 $0.09/min</option>\n'
+    + '  </select>\n'
+    + '  <button onclick="startCall()">Call now (1 min)</button>\n'
+    + '  <p id="callStatus" style="margin-top:10px;font-weight:600;"></p>\n'
+    + '</section>\n'
+    + '<script>\n'
+    + 'var callBalance = 0;\n'
+    + 'function topUp(amt){ callBalance += amt; document.getElementById("callBalance").textContent = callBalance.toFixed(2); }\n'
+    + 'function showRate(){}\n'
+    + 'function startCall(){\n'
+    + '  var rate = parseFloat(document.getElementById("callDestination").value);\n'
+    + '  if(callBalance < rate){ document.getElementById("callStatus").textContent = "Not enough balance \u2014 top up first."; return; }\n'
+    + '  callBalance -= rate;\n'
+    + '  document.getElementById("callBalance").textContent = callBalance.toFixed(2);\n'
+    + '  document.getElementById("callStatus").textContent = "Call connected \u2014 $" + rate.toFixed(2) + " deducted for 1 minute.";\n'
+    + '}\n'
+    + '<\/script>'
+    + payrollSectionHTML(true, c.includePayroll, c.payrollAddonPrice) + financialsSectionHTML(true, c.includeFinancials, c.financialsAddonPrice),
+  streaming: (c)=>'<h1>' + c.name + '</h1><p>' + c.tagline + '</p>\n'
+    + '<section>\n'
+    + '  <h2>Channel guide</h2>\n'
+    + '  <div id="channelList" style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:16px;"></div>\n'
+    + '  <div id="playerBox" style="height:220px;background:#12172B;color:#fff;border-radius:8px;display:flex;align-items:center;justify-content:center;font-weight:600;">Select a channel to start watching</div>\n'
+    + '</section>\n'
+    + '<script>\n'
+    + 'var CHANNELS = ["News 24","Sports Live","Movie Central","Kids Zone","Music Hits"];\n'
+    + 'function renderChannels(){\n'
+    + '  var container = document.getElementById("channelList");\n'
+    + '  container.innerHTML = "";\n'
+    + '  CHANNELS.forEach(function(ch){\n'
+    + '    var btn = document.createElement("button");\n'
+    + '    btn.textContent = ch;\n'
+    + '    btn.addEventListener("click", function(){ document.getElementById("playerBox").textContent = "Now playing: " + ch; });\n'
+    + '    container.appendChild(btn);\n'
+    + '  });\n'
+    + '}\n'
+    + 'renderChannels();\n'
+    + '<\/script>'
+    + payrollSectionHTML(true, c.includePayroll, c.payrollAddonPrice) + financialsSectionHTML(true, c.includeFinancials, c.financialsAddonPrice),
+  filetransfer: (c)=>'<h1>' + c.name + '</h1><p>' + c.tagline + '</p>\n'
+    + '<section>\n'
+    + '  <h2>Send a file</h2>\n'
+    + '  <p style="color:#888;font-size:.85rem;">Files transfer directly between devices \u2014 nothing is uploaded to a server.</p>\n'
+    + '  <input type="file" id="ftFile" style="margin-bottom:10px;">\n'
+    + '  <button onclick="generateShareCode()">Generate share code</button>\n'
+    + '  <div id="ftResult" style="display:none;margin-top:12px;padding:14px;border-radius:8px;background:#E7F7EF;color:#1A8F5C;font-weight:600;"></div>\n'
+    + '</section>\n'
+    + '<script>\n'
+    + 'function generateShareCode(){\n'
+    + '  var fileInput = document.getElementById("ftFile");\n'
+    + '  if(!fileInput.files[0]){ alert("Choose a file first."); return; }\n'
+    + '  var code = Math.random().toString(36).substring(2,8).toUpperCase();\n'
+    + '  var el = document.getElementById("ftResult");\n'
+    + '  el.style.display = "block";\n'
+    + '  el.textContent = "Share code: " + code + " \u2014 give this to the recipient to connect and receive \\"" + fileInput.files[0].name + "\\".";\n'
+    + '}\n'
+    + '<\/script>'
+    + payrollSectionHTML(true, c.includePayroll, c.payrollAddonPrice) + financialsSectionHTML(true, c.includeFinancials, c.financialsAddonPrice),
+  digitalproducts: (c)=>'<h1>' + c.name + '</h1><p>' + c.tagline + '</p>\n'
+    + '<section>\n'
+    + '  <h2>Browse products</h2>\n'
+    + '  <div id="digitalGrid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:12px;"></div>\n'
+    + '</section>\n'
+    + '<script>\n'
+    + 'var DIGITAL_PRODUCTS = [{name:"3-Bedroom House Plan",price:45,format:"PDF"},{name:"Logo Design Pack",price:25,format:"ZIP"},{name:"Business Plan Template",price:15,format:"DOCX"}];\n'
+    + 'function renderDigital(){\n'
+    + '  document.getElementById("digitalGrid").innerHTML = DIGITAL_PRODUCTS.map(function(p,i){\n'
+    + '    return \'<div style="border:1px solid #eee;border-radius:8px;padding:12px;">\'\n'
+    + '      + \'<div style="font-weight:600;">\' + p.name + \'</div>\'\n'
+    + '      + \'<div style="color:#888;font-size:.85rem;margin-bottom:8px;">$\' + p.price + \' \u00b7 \' + p.format + \'</div>\'\n'
+    + '      + \'<button onclick="buyDigital(\' + i + \')">Buy &amp; Download</button>\'\n'
+    + '      + \'<div id="digitalConfirm\' + i + \'" style="display:none;margin-top:8px;font-size:.82rem;color:#1A8F5C;font-weight:600;">Purchased \u2014 download starting...</div></div>\';\n'
+    + '  }).join("");\n'
+    + '}\n'
+    + 'function buyDigital(i){ document.getElementById("digitalConfirm"+i).style.display = "block"; }\n'
+    + 'renderDigital();\n'
+    + '<\/script>'
+    + payrollSectionHTML(true, c.includePayroll, c.payrollAddonPrice) + financialsSectionHTML(true, c.includeFinancials, c.financialsAddonPrice),
+  costsplit: (c)=>'<h1>' + c.name + '</h1><p>' + c.tagline + '</p>\n'
+    + '<section>\n'
+    + '  <h2>Split a cost</h2>\n'
+    + '  <input id="csAmount" type="number" placeholder="Total amount ($)" style="padding:8px;width:100%;margin-bottom:8px;">\n'
+    + '  <input id="csPeople" type="number" placeholder="Number of people" style="padding:8px;width:100%;margin-bottom:8px;">\n'
+    + '  <button onclick="splitCost()">Split evenly</button>\n'
+    + '  <div id="csResult" style="display:none;margin-top:12px;padding:14px;border-radius:8px;background:#F1F4FA;"></div>\n'
+    + '</section>\n'
+    + '<script>\n'
+    + 'function splitCost(){\n'
+    + '  var amount = parseFloat(document.getElementById("csAmount").value) || 0;\n'
+    + '  var people = parseInt(document.getElementById("csPeople").value) || 0;\n'
+    + '  if(amount <= 0 || people <= 0){ alert("Enter a valid amount and number of people."); return; }\n'
+    + '  var share = amount / people;\n'
+    + '  var el = document.getElementById("csResult");\n'
+    + '  el.style.display = "block";\n'
+    + '  el.innerHTML = "<strong>$" + share.toFixed(2) + "</strong> per person (" + people + " people splitting $" + amount.toFixed(2) + ")";\n'
+    + '}\n'
+    + '<\/script>'
+    + payrollSectionHTML(true, c.includePayroll, c.payrollAddonPrice) + financialsSectionHTML(true, c.includeFinancials, c.financialsAddonPrice),
+  donations: (c)=>'<h1>' + c.name + '</h1><p>' + c.tagline + '</p>\n'
+    + '<section>\n'
+    + '  <h2>Record a gift</h2>\n'
+    + '  <input id="donName" placeholder="Donor name" style="padding:8px;width:100%;margin-bottom:8px;">\n'
+    + '  <div style="display:flex;gap:8px;">\n'
+    + '    <input id="donAmount" type="number" placeholder="Amount ($)" style="padding:8px;flex:1;">\n'
+    + '    <select id="donFund" style="padding:8px;flex:1;">\n'
+    + '      <option>General Fund</option><option>Building Fund</option><option>Missions</option><option>Outreach</option>\n'
+    + '    </select>\n'
+    + '  </div>\n'
+    + '  <button onclick="recordGift()" style="margin-top:8px;">Record gift</button>\n'
+    + '  <h3 style="margin-top:18px;">Giving history</h3>\n'
+    + '  <div id="giftHistory" style="font-size:.85rem;color:#888;">No gifts recorded yet.</div>\n'
+    + '</section>\n'
+    + '<script>\n'
+    + 'var gifts = [];\n'
+    + 'function recordGift(){\n'
+    + '  var name = document.getElementById("donName").value || "Anonymous";\n'
+    + '  var amount = parseFloat(document.getElementById("donAmount").value) || 0;\n'
+    + '  var fund = document.getElementById("donFund").value;\n'
+    + '  if(amount <= 0){ alert("Enter a gift amount."); return; }\n'
+    + '  gifts.unshift({name:name, amount:amount, fund:fund, date:new Date().toLocaleDateString()});\n'
+    + '  document.getElementById("donAmount").value = "";\n'
+    + '  renderGifts();\n'
+    + '}\n'
+    + 'function renderGifts(){\n'
+    + '  document.getElementById("giftHistory").innerHTML = gifts.map(function(g){\n'
+    + '    return \'<div style="padding:6px 0;border-bottom:1px solid #eee;">\' + g.date + \' \u2014 \' + g.name + \': $\' + g.amount.toFixed(2) + \' (\' + g.fund + \')</div>\';\n'
+    + '  }).join("") || "No gifts recorded yet.";\n'
+    + '}\n'
+    + '<\/script>'
+    + payrollSectionHTML(true, c.includePayroll, c.payrollAddonPrice) + financialsSectionHTML(true, c.includeFinancials, c.financialsAddonPrice),
 };
 
 function assembleAppHTML(){
@@ -1922,6 +2427,8 @@ function assembleAppHTML(){
     merchWebsite: document.getElementById('cfgMerchWebsite').value || '',
     includePayroll: purchasedAddons.payroll,
     includeFinancials: purchasedAddons.financials,
+    payrollAddonPrice: getAddonPrice('payroll'),
+    financialsAddonPrice: getAddonPrice('financials'),
   };
   const body = TEMPLATE_SKELETONS[selectedTemplate.id](c);
   const logoTag = cfg.logoDataUrl ? `<img src="${cfg.logoDataUrl}" alt="${c.name} logo" style="height:44px;display:block;margin-bottom:10px;">` : '';
@@ -1933,6 +2440,10 @@ function assembleAppHTML(){
       section{padding:24px;border-top:1px solid #eee;}
       header{padding:24px;background:${cfg.primary};color:#fff;}
       header h1{color:#fff;margin:0;}
+      button{background:${cfg.accent};color:#fff;border:none;border-radius:6px;padding:10px 18px;font-size:.9rem;font-weight:600;cursor:pointer;transition:opacity .15s;}
+      button:hover{opacity:.85;}
+      button:active{transform:translateY(1px);}
+      button:disabled{background:#ccc;cursor:not-allowed;}
     </style></head>
     <body>
       ${promoBanner}
@@ -2016,10 +2527,37 @@ function injectTrialLock(html){
   return html.replace('</body>', lockBlock + '</body>');
 }
 
+const SOURCE_CODE_MULTIPLIER = 9; // full source + rebuild rights costs 9x the deployed price — intentionally steep
+
+function getSourceCodePrice(){
+  return Math.round((agreedPrice || 0) * SOURCE_CODE_MULTIPLIER);
+}
+
+function updateHostChoiceNote(){
+  const host = document.getElementById('hostChoice').value;
+  const note = document.getElementById('sourceCodeNote');
+  if(host === 'own'){
+    note.classList.remove('hidden');
+    document.getElementById('sourceCodePrice').textContent = '$' + getSourceCodePrice().toLocaleString();
+  } else {
+    note.classList.add('hidden');
+  }
+}
+
+let sourceCodeUnlocked = false;
+
 function deployApp(){
   const host = document.getElementById('hostChoice').value;
   const statusEl = document.getElementById('deployStatus');
   statusEl.classList.add('show');
+
+  if(host === 'own' && !sourceCodeUnlocked){
+    const price = getSourceCodePrice();
+    statusEl.innerHTML = 'Full source code &amp; rebuild rights: <strong>$' + price.toLocaleString() + '</strong><br>'
+      + '<button class="btn btn-primary" style="margin-top:8px;" onclick="unlockSourceCode()">Pay $' + price.toLocaleString() + ' to unlock source files</button>';
+    return;
+  }
+
   statusEl.textContent = 'Deploying your app…';
 
   const finishedHTML = injectTrialLock(assembleAppHTML());
@@ -2049,6 +2587,14 @@ function deployApp(){
   }, 1200);
 }
 
+function unlockSourceCode(){
+  // TODO: same as markPaid() — wire to a real Stripe/PayPal/Square charge
+  // for the source-code price before actually unlocking, rather than
+  // trusting the click client-side.
+  sourceCodeUnlocked = true;
+  deployApp();
+}
+
 function downloadApp(){
   const blob = new Blob([injectTrialLock(assembleAppHTML())], {type:'text/html'});
   const a = document.createElement('a');
@@ -2069,6 +2615,7 @@ suggestTaglineIfUnedited();
 updatePreview();
 updateCustomPricing();
 updateMaintenancePricing();
+capturePendingPaypalPayment();
 </script>
 
 </body>
